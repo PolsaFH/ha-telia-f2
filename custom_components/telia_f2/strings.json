@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Koble til Telia F2-ruter",
+        "data": {
+          "host": "IP-adresse",
+          "username": "Brukernavn",
+          "password": "Passord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Feil brukernavn eller passord",
+      "cannot_connect": "Klarte ikke koble til ruteren"
+    },
+    "abort": {
+      "already_configured": "Denne ruteren er allerede satt opp"
+    }
+  }
+}

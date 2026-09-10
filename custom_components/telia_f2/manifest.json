@@ -1,0 +1,11 @@
+{
+  "domain": "telia_f2",
+  "name": "Telia F2 Router",
+  "codeowners": ["@PolsaFH"],
+  "config_flow": true,
+  "documentation": "https://github.com/PolsaFH/ha-telia-f2",
+  "issue_tracker": "https://github.com/PolsaFH/ha-telia-f2/issues",
+  "iot_class": "local_polling",
+  "requirements": ["pycryptodome>=3.19.0"],
+  "version": "0.1.0"
+}
