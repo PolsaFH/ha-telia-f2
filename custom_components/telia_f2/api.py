@@ -162,8 +162,14 @@ class TeliaF2Client:
         await self._ws.send_json(login_payload)
         msg = await self._ws.receive_json(timeout=10)
 
-        result = msg.get("result")
-        if not result or result.get("code") != 0 or "ubus_rpc_session" not in result:
+        result = msg.get("result") or {}
+        # NOTE: earlier captures assumed a successful login always carries a
+        # top-level "code": 0 in the result, but real successful responses
+        # from the router don't include a "code" key at all (only failed
+        # logins/permission errors do, via the top-level "error" object).
+        # The only reliable success signal is the presence of a real
+        # session + csrf token.
+        if "ubus_rpc_session" not in result or "csrfToken" not in result:
             error = msg.get("error", {})
             raise TeliaF2AuthError(
                 f"Login failed: {error or msg}"
