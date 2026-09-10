@@ -1,6 +1,5 @@
 {
   "name": "Telia F2 Router",
   "render_readme": true,
-  "iot_class": "Local Polling",
   "homeassistant": "2024.1.0"
 }
