@@ -17,6 +17,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import TeliaF2ApiError, TeliaF2AuthError, TeliaF2Client
@@ -47,7 +48,9 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             dashboard = await self.client.async_get_dashboard()
             status_device = await self.client.async_get_status_device()
         except TeliaF2AuthError as err:
-            raise UpdateFailed(f"Authentication failed: {err}") from err
+            # Stops polling and asks for the password right away: repeating a
+            # rejected login could make the router block further logins.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except TeliaF2ApiError as err:
             raise UpdateFailed(f"API error: {err}") from err
 

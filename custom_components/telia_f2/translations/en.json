@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Telia F2 router",
+        "data": {
+          "host": "IP address",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Log in to the Telia F2 router again",
+        "description": "The router at {host} rejected the stored username or password.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Wrong username or password",
+      "too_many_attempts": "Too many login attempts. Wait a while and try again",
+      "cannot_connect": "Could not connect to the router",
+      "unexpected_response": "The router gave an unexpected answer to the login. Its firmware may have changed the login. See the log for details",
+      "unknown": "Unexpected error. See the log for details"
+    },
+    "abort": {
+      "already_configured": "This router is already set up",
+      "reauth_successful": "The login was updated"
+    }
+  }
+}
