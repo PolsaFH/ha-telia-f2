@@ -8,10 +8,16 @@
     own backhaul link quality back to the Controller.
   - Wired clients (type "LAN"): flat entries with hostname/mac/ip/rate
     directly, not nested under anything.
+
+/status/statistics returns one "statistics" string: the raw /proc/net/dev
+table (per-interface byte/packet counters). /status/wan returns the WAN
+interface state (protocol, uptime, addresses, gateway, DNS). Both are
+optional: a firmware that lacks them must not break the whole update.
 """
 from __future__ import annotations
 
 import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -27,9 +33,14 @@ _LOGGER = logging.getLogger(__name__)
 
 NODE_TYPES = {"Controller", "Extender"}
 
+# Fallback WAN interface name when /status/wan doesn't name its device. On
+# this hardware the internet-facing bridge is br-wan (rx = download from the
+# internet, tx = upload to it).
+DEFAULT_WAN_DEVICE = "br-wan"
+
 
 class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Polls /dashboard and /status/device and merges into one data dict."""
+    """Polls the router and merges the responses into one data dict."""
 
     def __init__(
         self, hass: HomeAssistant, entry: ConfigEntry, client: TeliaF2Client
@@ -42,6 +53,8 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self.entry = entry
+        # Previous WAN byte counters, to turn totals into a live rate.
+        self._prev_wan: tuple[float, int, int] | None = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -54,15 +67,100 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         except TeliaF2ApiError as err:
             raise UpdateFailed(f"API error: {err}") from err
 
+        # Optional endpoints. A failure here must not fail the whole update,
+        # so the core sensors keep working on firmware that lacks them.
+        statistics = await self._optional(self.client.async_get_status_statistics)
+        wan = await self._optional(self.client.async_get_status_wan)
+
         nodes, clients = _process_status_device(status_device)
         ports = _process_ethernet_ports(dashboard)
+        interfaces = _parse_proc_net_dev(
+            (statistics or {}).get("statistics") if isinstance(statistics, dict) else None
+        )
+        throughput = self._compute_throughput(interfaces, wan)
 
         return {
             "dashboard": dashboard,
             "nodes": nodes,
             "clients": clients,
             "ports": ports,
+            "interfaces": interfaces,
+            "throughput": throughput,
+            "wan": wan or {},
         }
+
+    async def _optional(self, call) -> dict[str, Any] | None:
+        """Call an endpoint that may not exist; never fail the update for it."""
+        try:
+            return await call()
+        except TeliaF2ApiError as err:
+            _LOGGER.debug("Optional endpoint unavailable: %s", err)
+            return None
+
+    def _compute_throughput(
+        self, interfaces: dict[str, dict[str, int]], wan: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """Turn the WAN interface's byte counters into totals and a live rate."""
+        device = DEFAULT_WAN_DEVICE
+        if isinstance(wan, dict):
+            device = wan.get("l3_device") or wan.get("device") or DEFAULT_WAN_DEVICE
+
+        counters = interfaces.get(device)
+        if not counters:
+            self._prev_wan = None
+            return {
+                "device": device,
+                "rx_bytes": None,
+                "tx_bytes": None,
+                "rx_mbps": None,
+                "tx_mbps": None,
+            }
+
+        rx, tx = counters["rx_bytes"], counters["tx_bytes"]
+        now = time.monotonic()
+        rx_mbps = tx_mbps = None
+        if self._prev_wan is not None:
+            prev_t, prev_rx, prev_tx = self._prev_wan
+            dt = now - prev_t
+            # Only a forward-moving counter over a real interval yields a rate;
+            # a reboot resets the counters, which would read as a huge spike.
+            if dt > 0 and rx >= prev_rx and tx >= prev_tx:
+                rx_mbps = round((rx - prev_rx) * 8 / dt / 1_000_000, 3)
+                tx_mbps = round((tx - prev_tx) * 8 / dt / 1_000_000, 3)
+        self._prev_wan = (now, rx, tx)
+
+        return {
+            "device": device,
+            "rx_bytes": rx,
+            "tx_bytes": tx,
+            "rx_mbps": rx_mbps,
+            "tx_mbps": tx_mbps,
+        }
+
+
+def _parse_proc_net_dev(text: str | None) -> dict[str, dict[str, int]]:
+    """Parse the /proc/net/dev table into {interface: {rx_bytes, tx_bytes}}.
+
+    The two header lines are skipped. Each data line is
+    "iface: rxbytes rxpackets ... (16 columns)"; column 0 is rx bytes and
+    column 8 is tx bytes.
+    """
+    result: dict[str, dict[str, int]] = {}
+    if not isinstance(text, str):
+        return result
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        name, _, rest = line.partition(":")
+        name = name.strip()
+        fields = rest.split()
+        if not name or len(fields) < 16:
+            continue
+        try:
+            result[name] = {"rx_bytes": int(fields[0]), "tx_bytes": int(fields[8])}
+        except ValueError:
+            continue
+    return result
 
 
 def _process_status_device(
@@ -76,7 +174,7 @@ def _process_status_device(
         entry_type = entry.get("type")
 
         if entry_type in NODE_TYPES:
-            node_key = entry.get("mac", entry.get("hostname"))
+            node_key = entry.get("mac") or entry.get("hostname")
             nodes[node_key] = {
                 "hostname": entry.get("hostname"),
                 "mac": entry.get("mac"),

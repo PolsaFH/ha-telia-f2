@@ -420,3 +420,6 @@ class TeliaF2Client:
 
     async def async_get_status_statistics(self) -> dict[str, Any]:
         return await self.async_call("/status/statistics")
+
+    async def async_get_status_wan(self) -> dict[str, Any]:
+        return await self.async_call("/status/wan")
