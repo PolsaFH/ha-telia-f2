@@ -1,112 +1,20 @@
 {
- "cpu": {
-  "all": 2
- },
- "mem": {
-  "total": 2022564,
-  "free": 498816,
-  "used": 75
- },
- "uptime": {
-  "uptime": "4D 22H 50M 32S",
-  "uptime_sec": 427832
- },
+ "cpu": {"all": 2},
+ "mem": {"total": 2022564, "free": 498816, "used": 75},
+ "uptime": {"uptime": "4D 22H 23M 12S"},
  "info": {
+  "friendly_name": "Telia F2 Router",
   "manufacturer": "Kaon",
-  "manufacturer_OUI": "0x547E1A",
   "model_name": "Telia F2",
-  "serial_number": "BD88000886001281",
-  "hardware_version": "1.0",
-  "software_version": "v2.4.20",
-  "wan_ifaces": "br-wan",
-  "wan_active": "br-wan",
-  "bridge_driver": "Telia F2",
-  "description": "Kaon Telia F2",
-  "product_class": "Telia F2",
-  "provisioning_code": "Kaon Telia F2_Telia F2",
-  "router_mode": "orphan",
-  "friendly_name": "Filips Router",
-  "reboot_reason": "Reboot System Call:Software Upgrade",
-  "oldsw_version": "v2.4.18",
-  "macaddr": "54:7e:1a:17:ec:57"
+  "software_version": "v0.0.0"
  },
  "wan_status": {
-  "wan": {
-   "up": true,
-   "pending": false,
-   "available": true,
-   "autostart": true,
-   "dynamic": false,
-   "uptime": 427785,
-   "l3_device": "br-wan",
-   "proto": "dhcp",
-   "device": "br-wan",
-   "updated": [
-    "data"
-   ],
-   "metric": 0,
-   "dns_metric": 0,
-   "delegation": true,
-   "ipv4-address": [
-    {
-     "address": "84.210.159.54",
-     "mask": 20
-    }
-   ],
-   "ipv6-address": [],
-   "ipv6-prefix": [],
-   "ipv6-prefix-assignment": [],
-   "route": [
-    {
-     "target": "0.0.0.0",
-     "mask": 0,
-     "nexthop": "84.210.144.1",
-     "source": "84.210.159.54/32"
-    }
-   ],
-   "dns-server": [
-    "80.232.93.182",
-    "80.232.93.181"
-   ],
-   "dns-search": [
-    "getinternet.no"
-   ],
-   "neighbors": [],
-   "inactive": {
-    "ipv4-address": [],
-    "ipv6-address": [],
-    "route": [],
-    "dns-server": [],
-    "dns-search": [],
-    "neighbors": []
-   },
-   "data": {
-    "expires": 429709,
-    "hostname": "Kaon-AR6445G_17ec57",
-    "leasetime": 3600
-   },
-   "mac": "54:7E:1A:17:EC:57\n"
-  },
-  "wan6": {
-   "up": false,
-   "pending": true,
-   "available": true,
-   "autostart": true,
-   "dynamic": false,
-   "proto": "dhcpv6",
-   "device": "br-wan",
-   "data": {}
-  },
-  "wan_6": {}
+  "wan": {"up": true, "ipv4-address": [{"address": "192.0.2.10", "mask": 20}]}
  },
  "interface": {
-  "eth0_status": "no",
-  "eth0_speed": "Unknown!",
-  "eth1_status": "yes",
-  "eth1_speed": "1000Mb/s",
-  "eth2_status": "yes",
-  "eth2_speed": "1000Mb/s",
-  "eth3_status": "yes",
-  "eth3_speed": "10000Mb/s"
+  "eth0_status": "yes",
+  "eth0_speed": "1000",
+  "eth1_status": "no",
+  "eth1_speed": ""
  }
 }

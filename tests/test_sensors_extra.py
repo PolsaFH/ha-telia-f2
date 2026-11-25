@@ -9,6 +9,7 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.telia_f2 import coordinator as coord_mod
+from custom_components.telia_f2.api import TeliaF2ApiError, TeliaF2AuthError
 from custom_components.telia_f2.const import DOMAIN
 from custom_components.telia_f2.coordinator import (
     TeliaF2Coordinator,
@@ -18,6 +19,7 @@ from custom_components.telia_f2.sensor import (
     SIMPLE_SENSOR_DESCRIPTIONS,
     _count_clients,
     _wan_gateway,
+    _wan_ipv6,
 )
 
 from .conftest import PASSWORD, USERNAME
@@ -104,7 +106,7 @@ def test_wan_gateway_from_default_route():
     wan = _fixture("status_wan.json")
     data = {"wan": wan}
     gw = _wan_gateway(data)
-    assert gw == "84.210.144.1"  # the mask==0 next hop
+    assert gw == "192.0.2.1"  # the mask==0 next hop
     assert _wan_gateway({"wan": {}}) is None
     assert _wan_gateway({}) is None
 
@@ -134,6 +136,59 @@ def test_wan_uptime_sensor():
     assert _desc("wan_uptime").value_fn(data) == 427785
 
 
+def test_throughput_rejects_nonstring_device(monkeypatch):
+    monkeypatch.setattr(coord_mod.time, "monotonic", lambda: 1000.0)
+    c = _bare_coordinator()
+    interfaces = {"br-wan": {"rx_bytes": 5, "tx_bytes": 7}}
+    # A corrupt l3_device (a list) must not crash; fall back to br-wan.
+    out = c._compute_throughput(interfaces, {"l3_device": ["br-wan"]})
+    assert out["device"] == "br-wan"
+    assert out["rx_bytes"] == 5 and out["tx_bytes"] == 7
+
+
+def test_throughput_interface_change_resets_rate(monkeypatch):
+    t = {"now": 1000.0}
+    monkeypatch.setattr(coord_mod.time, "monotonic", lambda: t["now"])
+    c = _bare_coordinator()
+    interfaces = {
+        "br-wan": {"rx_bytes": 0, "tx_bytes": 0},
+        "wan1": {"rx_bytes": 10_000_000, "tx_bytes": 10_000_000},
+    }
+    c._compute_throughput(interfaces, {"device": "br-wan"})
+    t["now"] = 1001.0
+    # WAN device changed: no rate computed against the other interface.
+    out = c._compute_throughput(interfaces, {"device": "wan1"})
+    assert out["device"] == "wan1"
+    assert out["rx_mbps"] is None and out["tx_mbps"] is None
+
+
+def test_wan_gateway_handles_bad_route_shapes():
+    assert _wan_gateway({"wan": {"route": 42}}) is None
+    assert _wan_gateway({"wan": {"route": ["junk", 5]}}) is None
+    assert _wan_gateway({"wan": {"route": [{"mask": 1, "nexthop": "x"}]}}) is None
+
+
+def test_wan_ipv6_sensor():
+    assert _wan_ipv6({"wan": _fixture("status_wan.json")}) is None  # empty on IPv4-only
+    data = {"wan": {"ipv6-address": [{"address": "2001:db8::1"}]}}
+    assert _desc("wan_ipv6").value_fn(data) == "2001:db8::1"
+    assert _wan_ipv6({"wan": {"ipv6-address": "bad"}}) is None
+
+
+async def test_optional_endpoint_propagates_auth_but_swallows_api_error():
+    c = object.__new__(TeliaF2Coordinator)
+
+    async def auth():
+        raise TeliaF2AuthError("session rejected")
+
+    async def api():
+        raise TeliaF2ApiError("not found")
+
+    with pytest.raises(TeliaF2AuthError):
+        await c._optional(auth)
+    assert await c._optional(api) is None
+
+
 # --- Full integration: the sensors appear with the right states in HA ---
 
 
@@ -143,7 +198,7 @@ async def test_sensors_expose_router_data(hass, router, enable_custom_integratio
             "cpu": {"all": 3},
             "mem": {"total": 2022564, "free": 498816, "used": 75},
             "uptime": {"uptime": "1 day"},
-            "info": {"friendly_name": "Filips Router", "model_name": "Telia F2"},
+            "info": {"friendly_name": "Test Router", "model_name": "Telia F2"},
             "wan_status": {"wan": {"up": True, "ipv4-address": [{"address": "1.2.3.4"}]}},
             "interface": {},
         }
@@ -177,13 +232,13 @@ async def test_sensors_expose_router_data(hass, router, enable_custom_integratio
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.states.get("sensor.filips_router_memory_usage").state == "75"
-    assert hass.states.get("sensor.filips_router_wireless_clients").state == "1"
-    assert hass.states.get("sensor.filips_router_wired_clients").state == "1"
-    assert hass.states.get("sensor.filips_router_wan_gateway").state == "84.210.144.1"
-    assert hass.states.get("sensor.filips_router_wan_uptime").state == "427785"
+    assert hass.states.get("sensor.test_router_memory_usage").state == "75"
+    assert hass.states.get("sensor.test_router_wireless_clients").state == "1"
+    assert hass.states.get("sensor.test_router_wired_clients").state == "1"
+    assert hass.states.get("sensor.test_router_wan_gateway").state == "192.0.2.1"
+    assert hass.states.get("sensor.test_router_wan_uptime").state == "427785"
     # Totals come from the br-wan interface counters.
-    received = hass.states.get("sensor.filips_router_wan_data_received")
+    received = hass.states.get("sensor.test_router_wan_data_received")
     assert float(received.state) == pytest.approx(247776551880 / 1_000_000_000, abs=0.05)
 
     assert await hass.config_entries.async_unload(entry.entry_id)

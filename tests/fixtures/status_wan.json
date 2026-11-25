@@ -9,49 +9,14 @@
  "l3_device": "br-wan",
  "proto": "dhcp",
  "device": "br-wan",
- "updated": [
-  "data"
- ],
  "metric": 0,
- "dns_metric": 0,
- "delegation": true,
- "ipv4-address": [
-  {
-   "address": "84.210.159.54",
-   "mask": 20
-  }
- ],
+ "ipv4-address": [{"address": "192.0.2.10", "mask": 20}],
  "ipv6-address": [],
  "ipv6-prefix": [],
- "ipv6-prefix-assignment": [],
  "route": [
-  {
-   "target": "0.0.0.0",
-   "mask": 0,
-   "nexthop": "84.210.144.1",
-   "source": "84.210.159.54/32"
-  }
+  {"target": "0.0.0.0", "mask": 0, "nexthop": "192.0.2.1", "source": "192.0.2.10/32"}
  ],
- "dns-server": [
-  "80.232.93.182",
-  "80.232.93.181"
- ],
- "dns-search": [
-  "getinternet.no"
- ],
- "neighbors": [],
- "inactive": {
-  "ipv4-address": [],
-  "ipv6-address": [],
-  "route": [],
-  "dns-server": [],
-  "dns-search": [],
-  "neighbors": []
- },
- "data": {
-  "expires": 429709,
-  "hostname": "Kaon-AR6445G_17ec57",
-  "leasetime": 3600
- },
- "mac": ""
+ "dns-server": ["192.0.2.53", "192.0.2.54"],
+ "dns-search": ["example.com"],
+ "data": {"expires": 429709, "hostname": "router", "leasetime": 3600}
 }

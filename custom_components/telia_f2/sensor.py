@@ -39,9 +39,24 @@ def _get(data: dict[str, Any], *path: str, default: Any = None) -> Any:
 
 def _wan_gateway(data: dict[str, Any]) -> Any:
     """Return the WAN default-route next hop (the gateway), if present."""
-    for route in _get(data, "wan", "route", default=[]) or []:
+    routes = _get(data, "wan", "route", default=[])
+    if not isinstance(routes, list):
+        return None
+    for route in routes:
         if isinstance(route, dict) and route.get("mask") == 0:
             return route.get("nexthop")
+    return None
+
+
+def _wan_ipv6(data: dict[str, Any]) -> Any:
+    """Return the WAN IPv6 address, if the connection has one.
+
+    This line is IPv4-only in practice, so the field is usually empty and
+    the sensor reads as unknown; it populates if/when IPv6 is provisioned.
+    """
+    addrs = _get(data, "wan", "ipv6-address", default=[])
+    if isinstance(addrs, list) and addrs and isinstance(addrs[0], dict):
+        return addrs[0].get("address")
     return None
 
 
@@ -113,6 +128,13 @@ SIMPLE_SENSOR_DESCRIPTIONS: tuple[TeliaF2SensorDescription, ...] = (
         name="WAN gateway",
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_wan_gateway,
+    ),
+    TeliaF2SensorDescription(
+        key="wan_ipv6",
+        translation_key="wan_ipv6",
+        name="WAN IPv6 address",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_wan_ipv6,
     ),
     # --- Throughput / data usage (/status/statistics, WAN interface) ---
     TeliaF2SensorDescription(

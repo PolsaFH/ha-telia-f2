@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
@@ -53,13 +54,19 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self.entry = entry
-        # Previous WAN byte counters, to turn totals into a live rate.
-        self._prev_wan: tuple[float, int, int] | None = None
+        # Previous WAN byte counters as (monotonic_time, device, rx, tx), so
+        # a rate is only derived from two readings of the SAME interface.
+        self._prev_wan: tuple[float, str, int, int] | None = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             dashboard = await self.client.async_get_dashboard()
             status_device = await self.client.async_get_status_device()
+            # Optional endpoints: a non-auth failure degrades to the core
+            # sensors (see _optional), but an auth failure must still reach
+            # the handler below so polling stops and reauth starts.
+            statistics = await self._optional(self.client.async_get_status_statistics)
+            wan = await self._optional(self.client.async_get_status_wan)
         except TeliaF2AuthError as err:
             # Stops polling and asks for the password right away: repeating a
             # rejected login could make the router block further logins.
@@ -67,15 +74,10 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         except TeliaF2ApiError as err:
             raise UpdateFailed(f"API error: {err}") from err
 
-        # Optional endpoints. A failure here must not fail the whole update,
-        # so the core sensors keep working on firmware that lacks them.
-        statistics = await self._optional(self.client.async_get_status_statistics)
-        wan = await self._optional(self.client.async_get_status_wan)
-
         nodes, clients = _process_status_device(status_device)
         ports = _process_ethernet_ports(dashboard)
         interfaces = _parse_proc_net_dev(
-            (statistics or {}).get("statistics") if isinstance(statistics, dict) else None
+            statistics.get("statistics") if isinstance(statistics, dict) else None
         )
         throughput = self._compute_throughput(interfaces, wan)
 
@@ -86,24 +88,39 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             "ports": ports,
             "interfaces": interfaces,
             "throughput": throughput,
-            "wan": wan or {},
+            "wan": wan if isinstance(wan, dict) else {},
         }
 
-    async def _optional(self, call) -> dict[str, Any] | None:
-        """Call an endpoint that may not exist; never fail the update for it."""
+    async def _optional(
+        self, call: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> dict[str, Any] | None:
+        """Call an endpoint that may not exist.
+
+        A non-auth API error (missing endpoint, connection blip, rate limit)
+        degrades to None so the core sensors keep working. TeliaF2AuthError
+        is deliberately NOT caught here: it must propagate so the caller can
+        turn it into a reauth, exactly as for the required endpoints.
+        """
         try:
             return await call()
+        except TeliaF2AuthError:
+            raise
         except TeliaF2ApiError as err:
             _LOGGER.debug("Optional endpoint unavailable: %s", err)
             return None
 
     def _compute_throughput(
-        self, interfaces: dict[str, dict[str, int]], wan: dict[str, Any] | None
+        self, interfaces: dict[str, dict[str, int]], wan: Any
     ) -> dict[str, Any]:
         """Turn the WAN interface's byte counters into totals and a live rate."""
         device = DEFAULT_WAN_DEVICE
         if isinstance(wan, dict):
-            device = wan.get("l3_device") or wan.get("device") or DEFAULT_WAN_DEVICE
+            # Only a non-empty string is a usable interface name; the router
+            # normally sends one, but guard against odd/corrupt shapes.
+            for candidate in (wan.get("l3_device"), wan.get("device")):
+                if isinstance(candidate, str) and candidate:
+                    device = candidate
+                    break
 
         counters = interfaces.get(device)
         if not counters:
@@ -120,14 +137,16 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         now = time.monotonic()
         rx_mbps = tx_mbps = None
         if self._prev_wan is not None:
-            prev_t, prev_rx, prev_tx = self._prev_wan
+            prev_t, prev_dev, prev_rx, prev_tx = self._prev_wan
             dt = now - prev_t
-            # Only a forward-moving counter over a real interval yields a rate;
-            # a reboot resets the counters, which would read as a huge spike.
-            if dt > 0 and rx >= prev_rx and tx >= prev_tx:
+            # A rate only makes sense between two readings of the same
+            # interface over a real interval with forward-moving counters.
+            # A reboot (counter reset) or an interface change would otherwise
+            # read as a huge spike.
+            if prev_dev == device and dt > 0 and rx >= prev_rx and tx >= prev_tx:
                 rx_mbps = round((rx - prev_rx) * 8 / dt / 1_000_000, 3)
                 tx_mbps = round((tx - prev_tx) * 8 / dt / 1_000_000, 3)
-        self._prev_wan = (now, rx, tx)
+        self._prev_wan = (now, device, rx, tx)
 
         return {
             "device": device,
@@ -138,12 +157,13 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
 
-def _parse_proc_net_dev(text: str | None) -> dict[str, dict[str, int]]:
+def _parse_proc_net_dev(text: Any) -> dict[str, dict[str, int]]:
     """Parse the /proc/net/dev table into {interface: {rx_bytes, tx_bytes}}.
 
     The two header lines are skipped. Each data line is
     "iface: rxbytes rxpackets ... (16 columns)"; column 0 is rx bytes and
-    column 8 is tx bytes.
+    column 8 is tx bytes. Anything that isn't a well-formed data line is
+    ignored rather than guessed at.
     """
     result: dict[str, dict[str, int]] = {}
     if not isinstance(text, str):
