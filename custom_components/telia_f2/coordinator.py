@@ -28,7 +28,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import TeliaF2ApiError, TeliaF2AuthError, TeliaF2Client
-from .const import DOMAIN, UPDATE_INTERVAL_SECONDS
+from .const import CONSIDER_HOME_SECONDS, DOMAIN, UPDATE_INTERVAL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +57,8 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Previous WAN byte counters as (monotonic_time, device, rx, tx), so
         # a rate is only derived from two readings of the SAME interface.
         self._prev_wan: tuple[float, str, int, int] | None = None
+        # mac -> monotonic time the client was last seen, for device trackers.
+        self._seen: dict[str, float] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -80,6 +82,12 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             statistics.get("statistics") if isinstance(statistics, dict) else None
         )
         throughput = self._compute_throughput(interfaces, wan)
+
+        now = time.monotonic()
+        for client in clients:
+            mac = client.get("mac")
+            if mac:
+                self._seen[mac] = now
 
         return {
             "dashboard": dashboard,
@@ -155,6 +163,24 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             "rx_mbps": rx_mbps,
             "tx_mbps": tx_mbps,
         }
+
+    def seen_macs(self) -> list[str]:
+        """Every client MAC seen since startup (a tracker is kept per MAC)."""
+        return list(self._seen)
+
+    def is_home(self, mac: str) -> bool:
+        """Whether a MAC was seen recently enough to count as home."""
+        last_seen = self._seen.get(mac)
+        if last_seen is None:
+            return False
+        return (time.monotonic() - last_seen) <= CONSIDER_HOME_SECONDS
+
+    def client_record(self, mac: str) -> dict[str, Any] | None:
+        """The current client entry for a MAC, if it is connected right now."""
+        for client in self.data.get("clients", []):
+            if client.get("mac") == mac:
+                return client
+        return None
 
 
 def _parse_proc_net_dev(text: Any) -> dict[str, dict[str, int]]:

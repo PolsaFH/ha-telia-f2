@@ -11,7 +11,12 @@ from .api import TeliaF2ApiError, TeliaF2AuthError, TeliaF2Client
 from .const import DOMAIN
 from .coordinator import TeliaF2Coordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.DEVICE_TRACKER,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

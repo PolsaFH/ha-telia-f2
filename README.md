@@ -69,6 +69,14 @@ The integration logs in for real during setup to verify the credentials before c
 | `binary_sensor.<name>_wan_connected` | Binary sensor | |
 | `binary_sensor.<name>_extender_connected` | Binary sensor | Mesh extender backhaul link, with signal/band/rate as attributes |
 | `button.<name>_restart` | Button | Reboots the router (device class `restart`, HA asks for confirmation) |
+| `device_tracker.<client>` | Device tracker | One presence entity per client the router sees (home/away) |
+
+
+### Presence (device_tracker)
+
+Every client the router lists becomes a `device_tracker` entity that is `home` while the router sees it and stays home for a short grace period (180 s) after it drops off, so a phone that briefly sleeps its Wi-Fi radio does not flap to `away`.
+
+Home Assistant **enables a tracker by default only if its MAC is already known to another integration** (your phone via the mobile app, an ESPHome device, etc.). Trackers for unknown MACs are created but disabled — enable the ones you want under **Settings -> Devices & services -> Entities**.
 
 ## Technical background
 
