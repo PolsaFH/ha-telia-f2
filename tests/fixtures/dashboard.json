@@ -1,0 +1,20 @@
+{
+ "cpu": {"all": 2},
+ "mem": {"total": 2022564, "free": 498816, "used": 75},
+ "uptime": {"uptime": "4D 22H 23M 12S"},
+ "info": {
+  "friendly_name": "Telia F2 Router",
+  "manufacturer": "Kaon",
+  "model_name": "Telia F2",
+  "software_version": "v0.0.0"
+ },
+ "wan_status": {
+  "wan": {"up": true, "ipv4-address": [{"address": "192.0.2.10", "mask": 20}]}
+ },
+ "interface": {
+  "eth0_status": "yes",
+  "eth0_speed": "1000",
+  "eth1_status": "no",
+  "eth1_speed": ""
+ }
+}

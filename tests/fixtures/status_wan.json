@@ -1,0 +1,22 @@
+{
+ "iface": "wan",
+ "up": true,
+ "pending": false,
+ "available": true,
+ "autostart": true,
+ "dynamic": false,
+ "uptime": 427785,
+ "l3_device": "br-wan",
+ "proto": "dhcp",
+ "device": "br-wan",
+ "metric": 0,
+ "ipv4-address": [{"address": "192.0.2.10", "mask": 20}],
+ "ipv6-address": [],
+ "ipv6-prefix": [],
+ "route": [
+  {"target": "0.0.0.0", "mask": 0, "nexthop": "192.0.2.1", "source": "192.0.2.10/32"}
+ ],
+ "dns-server": ["192.0.2.53", "192.0.2.54"],
+ "dns-search": ["example.com"],
+ "data": {"expires": 429709, "hostname": "router", "leasetime": 3600}
+}

@@ -20,3 +20,8 @@ REQUEST_TIMEOUT_SECONDS = 10
 # a real login.
 AES_KEY_HEX = "3030373230386536623966663534653937346330383633353339376231326634"
 AES_IV_HEX = "64623032303530363039663930376139"
+
+# A device-tracker stays "home" for this long after it was last seen in the
+# router's client list, so a phone that briefly sleeps its Wi-Fi radio does
+# not flap to "away" (6 missed 30s polls).
+CONSIDER_HOME_SECONDS = 180

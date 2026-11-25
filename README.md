@@ -56,10 +56,27 @@ The integration logs in for real during setup to verify the credentials before c
 | `sensor.<name>_uptime` | Sensor | Router's own uptime string |
 | `sensor.<name>_wan_ip_address` | Sensor | |
 | `sensor.<name>_connected_devices` | Sensor | State = count; `devices`, `nodes`, `wireless_count`, `wired_count` attributes |
+| `sensor.<name>_wireless_clients` | Sensor | Count of Wi-Fi clients |
+| `sensor.<name>_wired_clients` | Sensor | Count of wired clients |
+| `sensor.<name>_download_speed` | Sensor | WAN download, Mbit/s (from the WAN interface counters) |
+| `sensor.<name>_upload_speed` | Sensor | WAN upload, Mbit/s |
+| `sensor.<name>_wan_data_received` | Sensor | Total bytes received on WAN (for long-term data-usage stats) |
+| `sensor.<name>_wan_data_sent` | Sensor | Total bytes sent on WAN |
+| `sensor.<name>_memory_usage` | Sensor | RAM used, percent |
+| `sensor.<name>_wan_uptime` | Sensor | WAN connection uptime (diagnostic) |
+| `sensor.<name>_wan_gateway` | Sensor | WAN default gateway (diagnostic) |
 | `sensor.<name>_ethernet_ports` | Sensor | State = `connected/total`; `ports` attribute with per-port status/speed |
 | `binary_sensor.<name>_wan_connected` | Binary sensor | |
 | `binary_sensor.<name>_extender_connected` | Binary sensor | Mesh extender backhaul link, with signal/band/rate as attributes |
 | `button.<name>_restart` | Button | Reboots the router (device class `restart`, HA asks for confirmation) |
+| `device_tracker.<client>` | Device tracker | One presence entity per client the router sees (home/away) |
+
+
+### Presence (device_tracker)
+
+Every client the router lists becomes a `device_tracker` entity that is `home` while the router sees it and stays home for a short grace period (180 s) after it drops off, so a phone that briefly sleeps its Wi-Fi radio does not flap to `away`.
+
+Home Assistant **enables a tracker by default only if its MAC is already known to another integration** (your phone via the mobile app, an ESPHome device, etc.). Trackers for unknown MACs are created but disabled — enable the ones you want under **Settings -> Devices & services -> Entities**.
 
 ## Technical background
 
