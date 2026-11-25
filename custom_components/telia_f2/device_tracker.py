@@ -50,6 +50,20 @@ class TeliaF2DeviceTracker(CoordinatorEntity[TeliaF2Coordinator], ScannerEntity)
         self._mac = mac
         # ScannerEntity uses mac_address as the unique_id.
         self._attr_mac_address = mac
+        # Remember the last values we saw, so the name/IP stay stable while
+        # the client is briefly gone (inside the grace window) instead of
+        # falling back to the bare MAC.
+        record = coordinator.client_record(mac)
+        self._hostname: str | None = record.get("hostname") if record else None
+        self._ip: str | None = record.get("ip") if record else None
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        record = self.coordinator.client_record(self._mac)
+        if record:
+            self._hostname = record.get("hostname") or self._hostname
+            self._ip = record.get("ip") or self._ip
+        super()._handle_coordinator_update()
 
     @property
     def is_connected(self) -> bool:
@@ -57,16 +71,12 @@ class TeliaF2DeviceTracker(CoordinatorEntity[TeliaF2Coordinator], ScannerEntity)
 
     @property
     def ip_address(self) -> str | None:
-        record = self.coordinator.client_record(self._mac)
-        return record.get("ip") if record else None
+        return self._ip
 
     @property
     def hostname(self) -> str | None:
-        record = self.coordinator.client_record(self._mac)
-        return record.get("hostname") if record else None
+        return self._hostname
 
     @property
     def name(self) -> str:
-        record = self.coordinator.client_record(self._mac)
-        hostname = record.get("hostname") if record else None
-        return hostname or self._mac
+        return self._hostname or self._mac

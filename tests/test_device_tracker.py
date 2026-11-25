@@ -117,3 +117,92 @@ async def test_device_tracker_entities_created_and_home(
     assert laptop.attributes.get("ip") == "192.0.2.20"
 
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+def _dashboard_reply():
+    return {
+        "result": {
+            "cpu": {"all": 1},
+            "mem": {"used": 10},
+            "info": {"friendly_name": "Test Router"},
+            "interface": {},
+        }
+    }
+
+
+def _device_reply(clients):
+    return {"result": {"list": clients}}
+
+
+async def test_new_client_is_discovered_on_a_later_update(
+    hass, router, enable_custom_integrations
+):
+    router.replies["/dashboard"] = _dashboard_reply()
+    router.replies["/status/device"] = _device_reply(
+        [{"type": "LAN", "hostname": "a", "mac": "00:00:5e:00:53:01", "ip": "192.0.2.20"}]
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=router.host,
+        data={CONF_HOST: router.host, CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD},
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    assert ent_reg.async_get_entity_id("device_tracker", DOMAIN, "00:00:5e:00:53:02") is None
+
+    # A new client joins; the next poll must create exactly one new tracker.
+    router.replies["/status/device"] = _device_reply(
+        [
+            {"type": "LAN", "hostname": "a", "mac": "00:00:5e:00:53:01", "ip": "192.0.2.20"},
+            {"type": "LAN", "hostname": "b", "mac": "00:00:5e:00:53:02", "ip": "192.0.2.21"},
+        ]
+    )
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert ent_reg.async_get_entity_id("device_tracker", DOMAIN, "00:00:5e:00:53:02") == (
+        "device_tracker.b"
+    )
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_name_and_ip_stay_stable_during_grace(
+    hass, router, enable_custom_integrations
+):
+    mac = "00:00:5e:00:53:01"
+    router.replies["/dashboard"] = _dashboard_reply()
+    router.replies["/status/device"] = _device_reply(
+        [{"type": "LAN", "hostname": "laptop", "mac": mac, "ip": "192.0.2.20"}]
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=router.host,
+        data={CONF_HOST: router.host, CONF_USERNAME: USERNAME, CONF_PASSWORD: PASSWORD},
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    ent_reg = er.async_get(hass)
+    laptop_id = ent_reg.async_get_entity_id("device_tracker", DOMAIN, mac)
+    ent_reg.async_update_entity(laptop_id, disabled_by=None)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("device_tracker.laptop").state == "home"
+
+    # The client drops off the list but is still inside the grace window.
+    router.replies["/status/device"] = _device_reply([])
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    state = hass.states.get("device_tracker.laptop")
+    assert state.state == "home"  # grace window keeps it home
+    # Name and IP keep the last-known values, not the bare MAC.
+    assert state.attributes.get("friendly_name") == "laptop"
+    assert state.attributes.get("ip") == "192.0.2.20"
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
