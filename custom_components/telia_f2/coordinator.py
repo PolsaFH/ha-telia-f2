@@ -17,6 +17,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import TeliaF2ApiError, TeliaF2AuthError, TeliaF2Client
@@ -25,6 +26,10 @@ from .const import DOMAIN, UPDATE_INTERVAL_SECONDS
 _LOGGER = logging.getLogger(__name__)
 
 NODE_TYPES = {"Controller", "Extender"}
+
+# A rejected login stops polling and asks the user for the password. Require
+# a few in a row, so a single refusal from the router doesn't do that.
+MAX_AUTH_FAILURES = 3
 
 
 class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -41,15 +46,20 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self.entry = entry
+        self._auth_failures = 0
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             dashboard = await self.client.async_get_dashboard()
             status_device = await self.client.async_get_status_device()
         except TeliaF2AuthError as err:
+            self._auth_failures += 1
+            if self._auth_failures >= MAX_AUTH_FAILURES:
+                raise ConfigEntryAuthFailed(str(err)) from err
             raise UpdateFailed(f"Authentication failed: {err}") from err
         except TeliaF2ApiError as err:
             raise UpdateFailed(f"API error: {err}") from err
+        self._auth_failures = 0
 
         nodes, clients = _process_status_device(status_device)
         ports = _process_ethernet_ports(dashboard)

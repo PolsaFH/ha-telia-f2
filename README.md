@@ -80,11 +80,14 @@ The router runs an nginx-fronted local web UI (Kaon/Vue.js firmware) that talks 
 }
 ```
 
-Logging in requires three things the browser does that aren't obvious from the WebSocket traffic alone:
+Logging in requires four things the browser does that aren't obvious from the WebSocket traffic alone:
 
 1. **A real CSRF token**, fetched via `GET /csrf-token` — the token is in the `X-CSRF-Token` **response header**, not the response body (the body is just a placeholder string). Skipping this step still returns a "successful" login (`code: 0`) but the session silently has no real permissions — every subsequent call fails with `{"code": 6, "message": "Permission denied"}`.
-2. **AES-256-CBC encryption of the password**, with a key and IV that are hardcoded in the router's own JavaScript bundle (found by hooking `CryptoJS.AES.encrypt` in the browser console during a real login — see `api.py` for the exact key/IV and encryption code).
-3. Using the `sid`/`csrftoken` returned by the login response for every subsequent call, and re-authenticating before the ~300 second session timeout.
+2. **A one-time challenge** from `/auth/challenge` (called over the WebSocket with the CSRF token), which returns a `nonce` and an RSA `publicKey`.
+3. **RSA encryption of the password** (PKCS#1 v1.5) with that public key, sent to `/auth/login` together with the `nonce`.
+4. Using the `sid`/`csrftoken` returned by the login response for every subsequent call. The session times out after ~300 seconds without activity.
+
+**Older firmware (v2.4.18 and earlier)** has no `/auth/challenge`. There the password is AES-256-CBC encrypted with a key and IV hardcoded in the router's own JavaScript bundle, and sent without a nonce. Newer firmware answers that login with `{"code": 2, "message": "Invalid argument"}`. The integration tries the challenge first and falls back to the old login, so both work.
 
 None of this is a secret extracted from Telia's or Kaon's servers — it's all client-side JavaScript that the router ships to every browser that connects to it. This integration doesn't bypass any authentication; it logs in with the credentials you provide, the same way the web UI does.
 

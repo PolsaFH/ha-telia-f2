@@ -8,14 +8,26 @@
           "username": "Brukernavn",
           "password": "Passord"
         }
+      },
+      "reauth_confirm": {
+        "title": "Logg inn på Telia F2-ruteren på nytt",
+        "description": "Ruteren på {host} godtok ikke det lagrede brukernavnet eller passordet.",
+        "data": {
+          "username": "Brukernavn",
+          "password": "Passord"
+        }
       }
     },
     "error": {
       "invalid_auth": "Feil brukernavn eller passord",
-      "cannot_connect": "Klarte ikke koble til ruteren"
+      "too_many_attempts": "For mange innloggingsforsøk. Vent litt og prøv igjen",
+      "cannot_connect": "Klarte ikke koble til ruteren",
+      "unexpected_response": "Ruteren ga et uventet svar på innloggingen. Fastvaren kan ha endret innloggingen. Se loggen for detaljer",
+      "unknown": "Uventet feil. Se loggen for detaljer"
     },
     "abort": {
-      "already_configured": "Denne ruteren er allerede satt opp"
+      "already_configured": "Denne ruteren er allerede satt opp",
+      "reauth_successful": "Innloggingen er oppdatert"
     }
   }
 }

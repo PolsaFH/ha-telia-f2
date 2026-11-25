@@ -4,10 +4,10 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import TeliaF2AuthError, TeliaF2Client
+from .api import TeliaF2ApiError, TeliaF2AuthError, TeliaF2Client
 from .const import DOMAIN
 from .coordinator import TeliaF2Coordinator
 
@@ -27,9 +27,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await client.async_login()
     except TeliaF2AuthError as err:
         raise ConfigEntryAuthFailed(str(err)) from err
+    except TeliaF2ApiError as err:
+        raise ConfigEntryNotReady(str(err)) from err
 
     coordinator = TeliaF2Coordinator(hass, entry, client)
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except BaseException:
+        await client.async_close()
+        raise
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
