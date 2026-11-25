@@ -27,7 +27,9 @@ Login requires:
 Older firmware (v2.4.18 and earlier) has no /auth/challenge. There the
 password is AES-256-CBC encrypted with a fixed key/IV from the router's JS
 bundle (see const.py) and sent without a nonce. Newer firmware answers that
-old login with {"code": 2, "message": "Invalid argument"}.
+old login with {"code": 2, "message": "Invalid argument"}. The router answers
+endpoints it does not have with code 4 ("Not found"), so only that answer to
+/auth/challenge leads to the old login.
 
 Without a real token from /csrf-token, login still returns code 0 (looks
 successful) but every subsequent call fails with error code 6
@@ -62,7 +64,11 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 HomeAssistant"
 )
 
-# Error codes, as interpreted by the router's own web UI.
+# Error codes. 3 and 4 are the ubus codes for something that does not exist,
+# the rest are as interpreted by the router's own web UI.
+ERROR_INVALID_ARGUMENT = 2
+ERROR_METHOD_NOT_FOUND = 3
+ERROR_NOT_FOUND = 4
 ERROR_INVALID_CREDENTIALS = 5
 ERROR_PERMISSION_DENIED = 6  # "username or password is incorrect" on login
 ERROR_TOO_MANY_ATTEMPTS = 7
@@ -70,6 +76,19 @@ ERROR_MAX_SESSIONS = 14  # our session was dropped by the router
 
 LOGIN_AUTH_ERRORS = {ERROR_INVALID_CREDENTIALS, ERROR_PERMISSION_DENIED}
 SESSION_LOST_ERRORS = {ERROR_PERMISSION_DENIED, ERROR_MAX_SESSIONS}
+NO_CHALLENGE_ERRORS = {ERROR_METHOD_NOT_FOUND, ERROR_NOT_FOUND}
+
+# Error messages only use these texts. What the router sends could hold
+# session secrets, and error messages end up in the log.
+ERROR_DESCRIPTIONS = {
+    ERROR_INVALID_ARGUMENT: "invalid argument",
+    ERROR_METHOD_NOT_FOUND: "method not found",
+    ERROR_NOT_FOUND: "not found",
+    ERROR_INVALID_CREDENTIALS: "invalid credentials",
+    ERROR_PERMISSION_DENIED: "permission denied",
+    ERROR_TOO_MANY_ATTEMPTS: "too many attempts",
+    ERROR_MAX_SESSIONS: "too many sessions",
+}
 
 
 class TeliaF2AuthError(Exception):
@@ -103,13 +122,27 @@ def _encrypt_password_rsa(plaintext: str, public_key_pem: str) -> str:
         cipher = PKCS1_v1_5.new(RSA.import_key(public_key_pem))
         return base64.b64encode(cipher.encrypt(plaintext.encode("utf-8"))).decode()
     except (ValueError, IndexError, TypeError) as err:
-        raise TeliaF2ApiError(f"Could not encrypt the password: {err}") from err
+        raise TeliaF2ApiError("Could not encrypt the password") from err
 
 
 def _error_code(response: dict[str, Any]) -> int | None:
     """Return the jsonrpc error code of a response, if it is an error."""
     error = response.get("error")
-    return error.get("code") if isinstance(error, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    return code if type(code) is int else None
+
+
+def _describe_error(response: dict[str, Any]) -> str:
+    """Describe an error response without repeating what the router sent."""
+    code = _error_code(response)
+    if code is None:
+        return "unexpected response"
+    return f"{ERROR_DESCRIPTIONS.get(code, 'unknown error')} (code {code})"
+
+
+def _describe_exception(err: Exception) -> str:
+    """Describe an exception. The repr of aiohttp errors can hold headers."""
+    return f"{type(err).__name__}: {err}"
 
 
 class TeliaF2Client:
@@ -155,7 +188,7 @@ class TeliaF2Client:
                     token = resp.headers.get("X-CSRF-Token")
         except (aiohttp.ClientError, TimeoutError, OSError) as err:
             raise TeliaF2ConnectionError(
-                f"Could not fetch /csrf-token: {err!r}"
+                f"Could not fetch /csrf-token: {_describe_exception(err)}"
             ) from err
         if not token:
             raise TeliaF2ApiError("No X-CSRF-Token header in /csrf-token response")
@@ -177,7 +210,9 @@ class TeliaF2Client:
                     heartbeat=30,
                 )
         except (aiohttp.ClientError, TimeoutError, OSError) as err:
-            raise TeliaF2ConnectionError(f"Could not open websocket: {err!r}") from err
+            raise TeliaF2ConnectionError(
+                f"Could not open websocket: {_describe_exception(err)}"
+            ) from err
 
     async def _async_request(
         self,
@@ -227,7 +262,9 @@ class TeliaF2Client:
         except TimeoutError as err:
             raise TeliaF2ConnectionError(f"{path}: no response in time") from err
         except (aiohttp.ClientError, OSError, ValueError) as err:
-            raise TeliaF2ConnectionError(f"{path}: {err!r}") from err
+            raise TeliaF2ConnectionError(
+                f"{path}: {_describe_exception(err)}"
+            ) from err
 
     async def async_login(self) -> None:
         """Perform a full login: csrf token, websocket, challenge, login."""
@@ -265,8 +302,14 @@ class TeliaF2Client:
             sid=csrf_token,
             csrftoken=csrf_token,
         )
-        if _error_code(response) == ERROR_TOO_MANY_ATTEMPTS:
-            raise TeliaF2RateLimitError("Too many login attempts")
+        code = _error_code(response)
+        if code in NO_CHALLENGE_ERRORS:
+            _LOGGER.debug("Telia F2: no login challenge, using the old login")
+            return {"password": _encrypt_password_aes(self._password)}
+
+        message = f"Login challenge failed: {_describe_error(response)}"
+        if code == ERROR_TOO_MANY_ATTEMPTS:
+            raise TeliaF2RateLimitError(message)
 
         result = response.get("result")
         if isinstance(result, dict):
@@ -278,8 +321,8 @@ class TeliaF2Client:
                     "nonce": nonce,
                 }
 
-        _LOGGER.debug("Telia F2: no login challenge, using the old login")
-        return {"password": _encrypt_password_aes(self._password)}
+        # Don't guess: the old login would only use up a login attempt.
+        raise TeliaF2ApiError(message)
 
     def _store_session(self, response: dict[str, Any]) -> None:
         """Store the session from a login response, or raise."""
@@ -300,8 +343,7 @@ class TeliaF2Client:
             return
 
         code = _error_code(response)
-        # Never include the full response: it could hold session secrets.
-        message = f"Login failed: {response.get('error') or 'unexpected response'}"
+        message = f"Login failed: {_describe_error(response)}"
         if code in LOGIN_AUTH_ERRORS:
             raise TeliaF2AuthError(message)
         if code == ERROR_TOO_MANY_ATTEMPTS:
@@ -339,13 +381,16 @@ class TeliaF2Client:
 
         response = await self._async_session_request(path, action, msg)
         if _error_code(response) in SESSION_LOST_ERRORS:
-            # The session is stale. Log in again and retry a single time.
-            _LOGGER.debug("Telia F2: session rejected, logging in again")
-            await self._async_login_locked()
-            response = await self._async_session_request(path, action, msg)
+            # The session is stale. Log in again and retry a single time, but
+            # never repeat a write. The next call logs in again.
+            await self.async_close()
+            if action == "get":
+                _LOGGER.debug("Telia F2: session rejected, logging in again")
+                await self._async_login_locked()
+                response = await self._async_session_request(path, action, msg)
 
         if response.get("error"):
-            raise TeliaF2ApiError(f"{path}: {response['error']}")
+            raise TeliaF2ApiError(f"{path}: {_describe_error(response)}")
 
         return response.get("result") or {}
 

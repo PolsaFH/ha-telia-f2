@@ -15,7 +15,8 @@ REQUEST_TIMEOUT_SECONDS = 10
 
 # AES-256-CBC key/IV used by the web UI of older firmware (v2.4.18 and
 # earlier) to encrypt the login password client-side. Newer firmware uses a
-# one-time RSA challenge instead (see api.py). Found by hooking the CryptoJS.AES.encrypt() call
-# in the router's own JS bundle (app.*.js) during a real login.
+# one-time RSA challenge instead (see api.py). Found by hooking the
+# CryptoJS.AES.encrypt() call in the router's own JS bundle (app.*.js) during
+# a real login.
 AES_KEY_HEX = "3030373230386536623966663534653937346330383633353339376231326634"
 AES_IV_HEX = "64623032303530363039663930376139"

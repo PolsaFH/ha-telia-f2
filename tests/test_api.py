@@ -60,8 +60,64 @@ async def test_wrong_password_on_older_firmware(legacy_router, make_client):
 async def test_login_format_error_is_not_a_wrong_password(router, make_client):
     """Code 2 is what the old login got after the firmware update."""
     router._nonces = _ForgetfulDict()
-    with pytest.raises(TeliaF2ApiError, match="Invalid argument"):
+    with pytest.raises(TeliaF2ApiError, match="invalid argument"):
         await make_client(router).async_login()
+
+
+@pytest.mark.parametrize("code", [3, 4])
+async def test_old_login_only_without_challenge(legacy_router, make_client, code):
+    legacy_router.replies["/auth/challenge"] = {"error": {"code": code}}
+    await make_client(legacy_router).async_login()
+    assert legacy_router.logins == 1
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"error": {"code": 2, "message": "Invalid argument"}},
+        {"error": {"code": 6, "message": "Permission denied"}},
+        {"error": {"code": 14, "message": "Max sessions"}},
+        {"error": {"code": ["unhashable"]}},
+        {"error": "text"},
+        {"result": {}},
+        {"result": {"publicKey": "-----BEGIN PUBLIC KEY-----"}},
+        {"result": {"publicKey": "not a key", "nonce": "abc"}},
+    ],
+)
+async def test_failed_challenge_never_tries_the_old_login(router, make_client, reply):
+    router.replies["/auth/challenge"] = reply
+    with pytest.raises(TeliaF2ApiError):
+        await make_client(router).async_login()
+    assert router.login_attempts == 0
+
+
+@pytest.mark.parametrize("path", ["/auth/challenge", "/auth/login", "/dashboard"])
+@pytest.mark.parametrize("code", [2, 5, 7, 99, "SECRET", None])
+async def test_errors_do_not_repeat_what_the_router_sent(
+    router, make_client, caplog, path, code
+):
+    caplog.set_level("DEBUG")
+    router.replies[path] = {
+        "error": {
+            "code": code,
+            "message": "SECRET",
+            "data": {"csrfToken": "SECRET", "password": PASSWORD},
+        }
+    }
+    with pytest.raises((TeliaF2ApiError, TeliaF2AuthError)) as caught:
+        await make_client(router).async_get_dashboard()
+    for text in (str(caught.value), repr(caught.value), caplog.text):
+        assert "SECRET" not in text
+        assert PASSWORD not in text
+
+
+async def test_handshake_errors_do_not_repeat_headers(router, make_client):
+    client = make_client(router)
+    client._origin = router.host  # not an origin the router accepts
+    with pytest.raises(TeliaF2ConnectionError) as caught:
+        await client._open_ws()
+    assert "403" in str(caught.value)
+    assert "eaders" not in str(caught.value)
 
 
 async def test_rate_limit(router, make_client):
@@ -128,6 +184,20 @@ async def test_dropped_connection_never_repeats_a_reboot(router, make_client):
     with pytest.raises(TeliaF2ConnectionError):
         await client.async_call("/admin/reboot", action="post")
     assert router.calls.count("/admin/reboot") == 1
+
+
+@pytest.mark.parametrize("code", [6, 14])
+async def test_rejected_session_never_repeats_a_reboot(router, make_client, code):
+    client = make_client(router)
+    await client.async_login()
+    router.deny_next = code
+    with pytest.raises(TeliaF2ApiError):
+        await client.async_call("/admin/reboot", action="post")
+    assert router.calls.count("/admin/reboot") == 1
+    assert router.logins == 1
+
+    await client.async_get_dashboard()
+    assert router.logins == 2
 
 
 async def test_unsolicited_messages_are_skipped(router, make_client):

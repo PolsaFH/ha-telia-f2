@@ -1,14 +1,19 @@
 """Tests for setup, polling and the config flow inside Home Assistant."""
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResultType
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.telia_f2.const import DOMAIN
-from custom_components.telia_f2.coordinator import MAX_AUTH_FAILURES
 
 from .conftest import PASSWORD, USERNAME
 
@@ -97,13 +102,37 @@ async def test_password_changed_while_running_asks_for_it(hass, router):
     await _setup(hass, entry)
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
+    attempts = router.login_attempts
+
     router.password = "changed on the router"
-    for attempt in range(1, MAX_AUTH_FAILURES + 1):
-        router.expire_sessions()
-        await coordinator.async_refresh()
-        await hass.async_block_till_done()
-        assert not coordinator.last_update_success
-        assert bool(_reauth_flows(hass)) is (attempt == MAX_AUTH_FAILURES)
+    router.expire_sessions()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert not coordinator.last_update_success
+    assert len(_reauth_flows(hass)) == 1
+    assert router.login_attempts == attempts + 1
+
+    # Polling has stopped, so the router doesn't see the password again.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=10))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert router.login_attempts == attempts + 1
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_rate_limit_while_running_is_retried_without_reauth(hass, router):
+    entry = _entry(hass, router)
+    await _setup(hass, entry)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    router.rate_limited = True
+    router.expire_sessions()
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert not _reauth_flows(hass)
+
+    router.rate_limited = False
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

@@ -87,7 +87,7 @@ Logging in requires four things the browser does that aren't obvious from the We
 3. **RSA encryption of the password** (PKCS#1 v1.5) with that public key, sent to `/auth/login` together with the `nonce`.
 4. Using the `sid`/`csrftoken` returned by the login response for every subsequent call. The session times out after ~300 seconds without activity.
 
-**Older firmware (v2.4.18 and earlier)** has no `/auth/challenge`. There the password is AES-256-CBC encrypted with a key and IV hardcoded in the router's own JavaScript bundle, and sent without a nonce. Newer firmware answers that login with `{"code": 2, "message": "Invalid argument"}`. The integration tries the challenge first and falls back to the old login, so both work.
+**Older firmware (v2.4.18 and earlier)** has no `/auth/challenge`. There the password is AES-256-CBC encrypted with a key and IV hardcoded in the router's own JavaScript bundle, and sent without a nonce. Newer firmware answers that login with `{"code": 2, "message": "Invalid argument"}`. The integration tries the challenge first and only falls back to the old login if the router answers that the challenge endpoint does not exist (code 3 or 4).
 
 None of this is a secret extracted from Telia's or Kaon's servers — it's all client-side JavaScript that the router ships to every browser that connects to it. This integration doesn't bypass any authentication; it logs in with the credentials you provide, the same way the web UI does.
 

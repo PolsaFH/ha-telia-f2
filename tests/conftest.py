@@ -34,6 +34,7 @@ class FakeRouter:
         self.drop_next: str | None = None  # close the ws on this path, once
         self.deny_next: int | None = None  # answer a call with this code, once
         self.push_before_reply = False
+        self.replies: dict[str, dict[str, Any]] = {}  # fixed reply per path
         self._csrf: set[str] = set()
         self._nonces: dict[str, str] = {}
         self._sessions: dict[str, str] = {}
@@ -86,9 +87,14 @@ class FakeRouter:
 
     def _reply(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         msg = params["msg"]
+        if path in self.replies:
+            if path == "/auth/login":
+                self.login_attempts += 1
+            return self.replies[path]
         if path == "/auth/challenge":
             if self.legacy:
-                return _error(3, "Method not found")
+                # How the real router answers an endpoint it does not have.
+                return _error(4, "Not found")
             if self.rate_limited:
                 return _error(7, "Too many attempts")
             if msg.get("csrfToken") not in self._csrf:
