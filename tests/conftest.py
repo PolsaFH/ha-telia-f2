@@ -35,8 +35,7 @@ class FakeRouter:
         self.deny_next: int | None = None  # answer a call with this code, once
         self.push_before_reply = False
         self.replies: dict[str, dict[str, Any]] = {}  # fixed reply per path
-        self.ssids: list[dict[str, Any]] = []  # committed Wi-Fi SSID entries
-        self.pending: dict[str, Any] = {}  # staged by PUT, applied on commit
+        self.ssids: list[dict[str, Any]] = []  # Wi-Fi SSID entries
         self.put_payloads: list[dict[str, Any]] = []  # every PUT body received
         self.fail_put_names: set[str] = set()  # inject a write failure
         self._csrf: set[str] = set()
@@ -119,21 +118,19 @@ class FakeRouter:
         if path == "/status/device":
             return {"result": {"list": []}}
         if path == "/airties/ssid/all":
-            # Reads see the committed state only.
             return {"result": {"list": self.ssids}}
         if path == "/airties/ssid":
-            # A write stages a change; it is not visible until commit.
+            # Like the real router, a write takes effect immediately; commit
+            # only persists it. A failure leaves earlier writes applied.
             self.put_payloads.append(msg)
             name = msg.get("name")
             if name in self.fail_put_names:
                 return _error(15, "error")
-            self.pending[name] = msg.get("enable")
+            for ssid in self.ssids:
+                if ssid.get("name") == name:
+                    ssid["enable"] = msg.get("enable")
             return {"result": {"code": 0}}
         if path == "/commit":
-            for ssid in self.ssids:
-                if ssid.get("name") in self.pending:
-                    ssid["enable"] = self.pending[ssid["name"]]
-            self.pending.clear()
             return {"result": {"code": 0}}
         return {"result": {"path": path, "cpu": {"all": 7}, "interface": {}}}
 

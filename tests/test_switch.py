@@ -164,8 +164,12 @@ async def test_partial_write_failure_is_not_committed(
         )
     await hass.async_block_till_done()
 
-    # Nothing was committed, so the guest network is still fully off.
-    assert all(s["enable"] == 0 for s in router.ssids if s["type"] == "guest")
+    # Writes apply immediately, so the band before the failure is on and the
+    # rest are untouched -- a visible partial state that heals on a retry.
+    by_name = {s["name"]: s for s in router.ssids}
+    assert by_name["wifinet8"]["enable"] == "1"  # applied before the failure
+    assert by_name["wifinet6"]["enable"] == 0  # the write that failed
+    assert by_name["wifinet7"]["enable"] == 0  # never reached
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

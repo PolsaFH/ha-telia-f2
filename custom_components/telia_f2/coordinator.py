@@ -200,9 +200,14 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         entries (never the poll cache, so a password/SSID changed in the
         router UI since the last poll is not written back), then a
         read-modify-write that only flips ``enable`` to "1"/"0" on the
-        affected entries, then a single commit. Writes are paced because the
-        router rejects rapid bursts. If any write fails the commit is skipped
-        and the error propagates, so a partial change is never committed here.
+        affected entries, then a commit to persist them. Writes are paced
+        because the router rejects rapid bursts.
+
+        Each write takes effect immediately (verified live: the router does
+        not stage changes for a later commit), so there is no risk of an
+        uncommitted change being flushed by an unrelated commit. If a write
+        fails midway the already-applied bands stay changed and the error
+        propagates; the state is visible and heals on the next toggle.
         """
         async with self._wifi_lock:
             data = await self.client.async_get_airties_ssids()
