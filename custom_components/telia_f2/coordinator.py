@@ -16,6 +16,7 @@ optional: a firmware that lacks them must not break the whole update.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -39,6 +40,9 @@ NODE_TYPES = {"Controller", "Extender"}
 # internet, tx = upload to it).
 DEFAULT_WAN_DEVICE = "br-wan"
 
+# The router rejects rapid back-to-back SSID writes, so pace them.
+WIFI_WRITE_PACING_SECONDS = 0.4
+
 
 class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Polls the router and merges the responses into one data dict."""
@@ -59,6 +63,9 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._prev_wan: tuple[float, str, int, int] | None = None
         # mac -> monotonic time the client was last seen, for device trackers.
         self._seen: dict[str, float] = {}
+        # Serialises every Wi-Fi write transaction against this router, so two
+        # switches can never commit each other's half-applied changes.
+        self._wifi_lock = asyncio.Lock()
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -183,6 +190,44 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             if client.get("mac") == mac:
                 return client
         return None
+
+    async def async_set_wifi_enabled(
+        self, wifi_type: str, band: str | None, value: str
+    ) -> None:
+        """Turn a Wi-Fi network/band on or off, safely.
+
+        The whole transaction runs under one lock: a FRESH read of the SSID
+        entries (never the poll cache, so a password/SSID changed in the
+        router UI since the last poll is not written back), then a
+        read-modify-write that only flips ``enable`` to "1"/"0" on the
+        affected entries, then a single commit. Writes are paced because the
+        router rejects rapid bursts. If any write fails the commit is skipped
+        and the error propagates, so a partial change is never committed here.
+        """
+        async with self._wifi_lock:
+            data = await self.client.async_get_airties_ssids()
+            entries = [
+                e
+                for e in data.get("list", [])
+                if e.get("type") == wifi_type
+                and (band is None or e.get("band") == band)
+            ]
+            if not entries:
+                raise TeliaF2ApiError(f"No {wifi_type} Wi-Fi network to change")
+
+            changed = False
+            for entry in entries:
+                if str(entry.get("enable")) == value:
+                    continue
+                if changed:
+                    await asyncio.sleep(WIFI_WRITE_PACING_SECONDS)
+                payload = dict(entry)
+                payload["enable"] = value
+                await self.client.async_set_airties_ssid(payload)
+                changed = True
+            if changed:
+                await self.client.async_commit_airties()
+            await self.async_request_refresh()
 
 
 def _parse_proc_net_dev(text: Any) -> dict[str, dict[str, int]]:

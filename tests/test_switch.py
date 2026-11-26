@@ -1,6 +1,7 @@
 """Tests for the Wi-Fi band / guest / IoT on-off switches."""
 from __future__ import annotations
 
+import pytest
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -123,4 +124,69 @@ async def test_turning_on_guest_enables_all_its_bands(
     assert all(s["enable"] == 1 for s in router.ssids if s["type"] == "home")
     assert hass.states.get(guest).state == "on"
 
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_write_sends_the_whole_entry_and_string_enable(
+    hass, router, enable_custom_integrations
+):
+    entry = await _setup(hass, router)
+    reg = er.async_get(hass)
+    guest = reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_wifi_guest")
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": guest}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    # Every write kept the full entry (ssid/key/encryption) and flipped only
+    # enable, as a string.
+    assert router.put_payloads
+    for payload in router.put_payloads:
+        assert payload["enable"] == "1"
+        assert payload["key"] == "a-fake-key"
+        assert payload["ssid"] and payload["encryption"]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_partial_write_failure_is_not_committed(
+    hass, router, enable_custom_integrations
+):
+    entry = await _setup(hass, router)
+    reg = er.async_get(hass)
+    guest = reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_wifi_guest")
+
+    # The second guest band write fails.
+    router.fail_put_names = {"wifinet6"}
+    with pytest.raises(Exception):  # noqa: B017 - any failure must surface
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": guest}, blocking=True
+        )
+    await hass.async_block_till_done()
+
+    # Nothing was committed, so the guest network is still fully off.
+    assert all(s["enable"] == 0 for s in router.ssids if s["type"] == "guest")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_write_uses_a_fresh_read_not_the_poll_cache(
+    hass, router, enable_custom_integrations
+):
+    entry = await _setup(hass, router)
+    reg = er.async_get(hass)
+    guest = reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_wifi_guest")
+
+    # The key is changed on the router (e.g. in its web UI) after the last poll.
+    for ssid in router.ssids:
+        if ssid["type"] == "guest":
+            ssid["key"] = "rotated-key"
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": guest}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    # The write carried the NEW key, not the one cached at setup time.
+    assert router.put_payloads
+    assert all(p["key"] == "rotated-key" for p in router.put_payloads)
     assert await hass.config_entries.async_unload(entry.entry_id)

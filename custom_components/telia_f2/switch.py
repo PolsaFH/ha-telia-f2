@@ -8,7 +8,6 @@ home entry; the guest/IoT switches target every band of that network at once.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -117,23 +116,7 @@ class TeliaF2WifiSwitch(CoordinatorEntity[TeliaF2Coordinator], SwitchEntity):
         return any(_enabled(e) for e in entries)
 
     async def _async_apply(self, value: str) -> None:
-        entries = self._entries()
-        if not entries:
-            return
-        changed = False
-        for entry in entries:
-            if str(entry.get("enable")) == value:
-                continue  # already in the wanted state
-            if changed:
-                # The router rejects rapid back-to-back writes, so pace them.
-                await asyncio.sleep(0.4)
-            payload = dict(entry)
-            payload["enable"] = value
-            await self.coordinator.client.async_set_airties_ssid(payload)
-            changed = True
-        if changed:
-            await self.coordinator.client.async_commit_airties()
-            await self.coordinator.async_request_refresh()
+        await self.coordinator.async_set_wifi_enabled(self._type, self._band, value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._async_apply("1")
