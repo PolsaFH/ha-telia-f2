@@ -15,12 +15,13 @@ The Telia F2 has no official Home Assistant integration and no public API docume
 
 ## Features
 
-- **Sensors**: CPU load, free memory, uptime, WAN IP address, connected-device count, ethernet port status
+- **Sensors**: CPU load, memory (free and percent used), uptime, WAN IP address, WAN uptime / gateway / IPv6, connected-device count, wireless and wired client counts, ethernet port status
+- **Throughput & data usage**: WAN download/upload speed (Mbit/s) and total data received/sent, for long-term statistics and the energy-style history graphs
 - **Binary sensors**: WAN connectivity, mesh extender connectivity (with backhaul signal strength as attributes)
 - **Device list**: one sensor with a full attribute list of every connected client (wired + wireless), which node/radio each is on, signal strength, and link rate — instead of one entity per client
+- **Presence**: a `device_tracker` per client (home/away), so automations can react to who is home
+- **Wi-Fi switches**: turn each band of the main network (2.4 / 5 / 6 GHz) on or off, plus the guest and IoT networks
 - **Button**: restart the router
-
-Not implemented (yet): toggling Wi-Fi bands on/off. The router's own UI makes this awkward (you have to disable band steering, then toggle each band individually), and we haven't captured/reverse-engineered that flow. PRs welcome.
 
 ## Installation
 
@@ -127,7 +128,7 @@ Not affiliated with or endorsed by Telia or Kaon. Provided as-is; use at your ow
 
 ## Contributing
 
-Issues and PRs welcome — especially for the Wi-Fi toggle functionality mentioned above.
+Issues and PRs welcome.
 
 ## License
 
