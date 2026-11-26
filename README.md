@@ -70,6 +70,9 @@ The integration logs in for real during setup to verify the credentials before c
 | `binary_sensor.<name>_extender_connected` | Binary sensor | Mesh extender backhaul link, with signal/band/rate as attributes |
 | `button.<name>_restart` | Button | Reboots the router (device class `restart`, HA asks for confirmation) |
 | `device_tracker.<client>` | Device tracker | One presence entity per client the router sees (home/away) |
+| `switch.<name>_wi_fi_2_4_ghz` / `_5_ghz` / `_6_ghz` | Switch | Turn a Wi-Fi band on/off |
+| `switch.<name>_guest_wi_fi` | Switch | Turn the guest network on/off (all its bands) |
+| `switch.<name>_iot_wi_fi` | Switch | Turn the IoT network on/off |
 
 
 ### Presence (device_tracker)
@@ -77,6 +80,11 @@ The integration logs in for real during setup to verify the credentials before c
 Every client the router lists becomes a `device_tracker` entity that is `home` while the router sees it and stays home for a short grace period (180 s) after it drops off, so a phone that briefly sleeps its Wi-Fi radio does not flap to `away`.
 
 Home Assistant **enables a tracker by default only if its MAC is already known to another integration** (your phone via the mobile app, an ESPHome device, etc.). Trackers for unknown MACs are created but disabled — enable the ones you want under **Settings -> Devices & services -> Entities**.
+
+
+### Wi-Fi switches
+
+The Wi-Fi band, guest and IoT switches turn each network on or off by writing its SSID entries back to the router (`PUT /airties/ssid`) and committing. Turning a main band off disconnects the devices on it. If a toggle occasionally fails (the router can reject rapid writes), just try again.
 
 ## Technical background
 

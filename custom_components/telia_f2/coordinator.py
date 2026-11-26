@@ -69,6 +69,7 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             # the handler below so polling stops and reauth starts.
             statistics = await self._optional(self.client.async_get_status_statistics)
             wan = await self._optional(self.client.async_get_status_wan)
+            ssids = await self._optional(self.client.async_get_airties_ssids)
         except TeliaF2AuthError as err:
             # Stops polling and asks for the password right away: repeating a
             # rejected login could make the router block further logins.
@@ -97,6 +98,7 @@ class TeliaF2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             "interfaces": interfaces,
             "throughput": throughput,
             "wan": wan if isinstance(wan, dict) else {},
+            "wifi_ssids": (ssids or {}).get("list", []) if isinstance(ssids, dict) else [],
         }
 
     async def _optional(

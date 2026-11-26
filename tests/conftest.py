@@ -35,6 +35,7 @@ class FakeRouter:
         self.deny_next: int | None = None  # answer a call with this code, once
         self.push_before_reply = False
         self.replies: dict[str, dict[str, Any]] = {}  # fixed reply per path
+        self.ssids: list[dict[str, Any]] = []  # Wi-Fi SSID entries for switch tests
         self._csrf: set[str] = set()
         self._nonces: dict[str, str] = {}
         self._sessions: dict[str, str] = {}
@@ -114,6 +115,15 @@ class FakeRouter:
             return _error(code, "error")
         if path == "/status/device":
             return {"result": {"list": []}}
+        if path == "/airties/ssid/all":
+            return {"result": {"list": self.ssids}}
+        if path == "/airties/ssid":
+            for ssid in self.ssids:
+                if ssid.get("name") == msg.get("name"):
+                    ssid["enable"] = msg.get("enable")
+            return {"result": {"code": 0}}
+        if path == "/commit":
+            return {"result": {"code": 0}}
         return {"result": {"path": path, "cpu": {"all": 7}, "interface": {}}}
 
     def _login(self, msg: dict[str, Any]) -> dict[str, Any]:
