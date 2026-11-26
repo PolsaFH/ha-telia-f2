@@ -423,3 +423,15 @@ class TeliaF2Client:
 
     async def async_get_status_wan(self) -> dict[str, Any]:
         return await self.async_call("/status/wan")
+
+    async def async_get_airties_ssids(self) -> dict[str, Any]:
+        """All Wi-Fi SSIDs (home/guest/iot/backhaul) with their enable flags."""
+        return await self.async_call("/airties/ssid/all")
+
+    async def async_set_airties_ssid(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """Write one SSID entry back (keyed by its 'name'). enable is "1"/"0"."""
+        return await self.async_call("/airties/ssid", action="put", msg=entry)
+
+    async def async_commit_airties(self) -> dict[str, Any]:
+        """Commit pending Wi-Fi changes so they take effect."""
+        return await self.async_call("/commit", action="post", msg={"session": "airties"})
