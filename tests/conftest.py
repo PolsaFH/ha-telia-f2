@@ -38,6 +38,7 @@ class FakeRouter:
         self.ssids: list[dict[str, Any]] = []  # Wi-Fi SSID entries
         self.put_payloads: list[dict[str, Any]] = []  # every PUT body received
         self.fail_put_names: set[str] = set()  # inject a write failure
+        self.commit_count = 0  # how many commits were issued
         self._csrf: set[str] = set()
         self._nonces: dict[str, str] = {}
         self._sessions: dict[str, str] = {}
@@ -131,6 +132,7 @@ class FakeRouter:
                     ssid["enable"] = msg.get("enable")
             return {"result": {"code": 0}}
         if path == "/commit":
+            self.commit_count += 1
             return {"result": {"code": 0}}
         return {"result": {"path": path, "cpu": {"all": 7}, "interface": {}}}
 

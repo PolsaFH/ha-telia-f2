@@ -134,18 +134,19 @@ async def test_write_sends_the_whole_entry_and_string_enable(
     reg = er.async_get(hass)
     guest = reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_wifi_guest")
 
+    original = {
+        s["name"]: dict(s) for s in router.ssids if s["type"] == "guest"
+    }
     await hass.services.async_call(
         "switch", "turn_on", {"entity_id": guest}, blocking=True
     )
     await hass.async_block_till_done()
 
-    # Every write kept the full entry (ssid/key/encryption) and flipped only
-    # enable, as a string.
-    assert router.put_payloads
+    # Each write is the whole original entry with only enable flipped to the
+    # string "1" -- nothing (ssid/key/encryption/...) is dropped or changed.
+    assert len(router.put_payloads) == len(original)
     for payload in router.put_payloads:
-        assert payload["enable"] == "1"
-        assert payload["key"] == "a-fake-key"
-        assert payload["ssid"] and payload["encryption"]
+        assert payload == {**original[payload["name"]], "enable": "1"}
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
@@ -170,6 +171,7 @@ async def test_partial_write_failure_is_not_committed(
     assert by_name["wifinet8"]["enable"] == "1"  # applied before the failure
     assert by_name["wifinet6"]["enable"] == 0  # the write that failed
     assert by_name["wifinet7"]["enable"] == 0  # never reached
+    assert router.commit_count == 0  # a failed transaction must not commit
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
